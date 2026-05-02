@@ -2,6 +2,7 @@
 #include "AlarmService.h"
 #include "MqttClient.h"
 #include "PressureSensor.h"
+#include "TankFiller.h"
 
 IPAddress ip(192, 168, 178, 180);
 IPAddress dns(192, 168, 178, 1);
@@ -13,28 +14,32 @@ IPAddress server(192, 168, 178, 209);
 Valve valve1(D0, LED_D0);
 Valve valve2(D1, LED_D1);
 Valve valve3(D2, LED_D2);
-Valve valve4(D3, LED_D3);
 AlarmService alarmService(true);
+TankFiller tankFiller(I2, I3, I4, D3, alarmService);
 MqttClient mqttClient(ip, dns, gateway, subnet, server);
 PressureSensor pressureSensor(I1);
 
 void setup() {
   mqttClient.begin(AcutateValve);
   alarmService.StartupOk(mqttClient.connected());
+  tankFiller.begin();
 }
 
 void loop() {
   mqttClient.loop();
   pressureSensor.Loop();
+  tankFiller.loop();
+
   if(alarmService.AnyAlarms()) {
     valve1.close();
     valve2.close();
     valve3.close();
-    valve4.close();
+    tankFiller.close();
     return;
   }
 
   alarmService.CheckConnections(mqttClient.connected());
+  
 
   if(pressureSensor.SouldSendData()) {
     mqttClient.send("huis/sproeisysteem/druk", pressureSensor.SendData(), false);
@@ -43,10 +48,6 @@ void loop() {
 }
 
 void AcutateValve(int valve, PinStatus Action) {
-  if(!valve4.State() && Action == HIGH) {
-    valve4.open();
-  }
-
   switch(valve) {
     case 1:
       if(Action == HIGH) {
@@ -70,22 +71,4 @@ void AcutateValve(int valve, PinStatus Action) {
       }
     break;
   }
-
-  if(CanStopFrequencyInverter()) {
-    Serial.println("Closing 4");
-    valve4.close();
-  }
-}
-
-bool CanStopFrequencyInverter() {
-
-  if(valve1.State()) {
-    return false;
-  } else if(valve2.State()) {
-    return false;
-  } else if(valve3.State()) {
-    return false;
-  }
-
-  return true;
 }
